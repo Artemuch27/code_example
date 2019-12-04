@@ -1,0 +1,618 @@
+/*eslint max-statements: false */
+/*eslint func-names: ["error", "never"]*/
+/*eslint prefer-arrow-callback: false*/
+
+import * as chartDefaults from './chartDefaults';
+import * as chartHandlers from './chartHandlers';
+
+import {
+    convertChartData,
+    getAxisesData,
+    getFilteredPoints,
+    getHistogramsData,
+    getLevelsData,
+    getLineValues,
+    getResultDataSet,
+    getScales,
+    getValueScaleFormat,
+    xAxisTickTemplate,
+    xAxisTimeGraduation,
+    yAxisGraduation,
+    yAxisTickTemplate,
+} from './helpers';
+
+import d3 from './d3Helpers';
+import lodash from 'lodash';
+import styles from './styles';
+
+class Chart {
+    constructor ({ svg, chartData, options, zoom, relativeWidth, onSelect, onDraw }) {
+        self = this;
+
+        this.svg = svg;
+        this.options = options;
+        this.zoom = zoom;
+        this.onSelect = onSelect;
+        this.relativeWidth = relativeWidth;
+        this.selected = {};
+        this.freeZoomSelection = {};
+        this.showAreaSelector = false;
+        this.onDrawCallback = onDraw;
+        this.chartData = convertChartData(chartData, options.timeScale, options.dateRange);
+        this.scales = {};
+
+        this.init();
+    }
+
+    init () {
+        const { height, margin } = this.options;
+        const width = this.relativeWidth;
+        const rootGroup = this.svg
+            .attr('width', width + margin.right + margin.left)
+            .attr('height', height + margin.top + margin.bottom)
+            .style('position', 'relative')
+            .append('g')
+            .attr('transform', `translate(${margin.left},${margin.top})`);
+
+        this.mouseArea = rootGroup.append('g').append('rect')
+            .attr('class', styles['mouse-area'])
+            .attr('width', width - margin.right - margin.left)
+            .attr('height', height - margin.top)
+            .attr('transform', `translate(0,${margin.top})`);
+
+        this.grid = rootGroup.append('g');
+        this.xAxis = rootGroup.append('g');
+        this.yAxis = rootGroup.append('g');
+        this.lines = rootGroup.append('g');
+        this.histograms = rootGroup.append('g');
+        this.scanner = rootGroup.append('g');
+        this.clipPath = rootGroup.append('g');
+
+        this.drawChart();
+    }
+
+    getDataValue (value) {
+        return this.options.timeScale ? value.getTime() : value;
+    }
+
+    update ({ chartData, options, zoom, showAreaSelector }) {
+        if (chartData) {
+            this.chartData = convertChartData(chartData, options.timeScale, options.dateRange);
+        }
+
+        this.options = options;
+        this.zoom = zoom;
+        this.freeZoomChanged = !lodash.isEqual(this.freeZoomSelection, zoom.freeZoomSelection);
+        this.freeZoomSelection = zoom.freeZoomSelection;
+        this.showAreaSelector = showAreaSelector;
+        this.drawChart();
+    }
+
+    changeChartType () {
+        this.lines.selectAll('*').remove();
+        this.histograms.selectAll('*').remove();
+    }
+
+    redrawChart () {
+        const { options, scales, relativeWidth } = this;
+        const { xScale, yScale, levelScale } = scales;
+
+        this.lines.selectAll(`.${styles['line']}`)
+            .attr('d', (dataValue) => this.lineFunction(getLineValues(dataValue, options)));
+        this.lines.selectAll(`.${styles['line-level']}`)
+            .attr('d', (dataValue) => this.lineLevel(dataValue.values));
+
+        this.lines.selectAll(`.${styles['area']}`)
+            .attr('d', (dataValue) => this.areaFunction(getLineValues(dataValue, options)));
+
+        this.lines.selectAll(`.${styles['clipPath-rect-level']}`)
+            .attr('width', relativeWidth - options.margin.left - options.margin.right + chartDefaults.LEVELS_PADDING);
+
+        this.clipPath.selectAll(`.${styles['clipPath-rect']}`)
+            .attr('width', relativeWidth - options.margin.left - options.margin.right);
+
+        this.mouseArea.attr('width', xScale.range()[1]);
+
+        this.lines.selectAll(`.${styles['circle']}`)
+            .attr('cx', (dataValue) => xScale(dataValue.x))
+            .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale));
+
+        this.lines.selectAll(`.${styles['circle-level']}`)
+            .attr('cx', (dataValue) => levelScale(dataValue.x))
+            .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale));
+
+        this.lines.selectAll(`.${styles['level-column']}`)
+            .attr('transform', `translate(${relativeWidth - (options.margin.right * 2) - options.margin.left},${options.margin.top * 2})`);
+
+        this.drawAxis();
+        this.drawGridLines();
+        if (options.chartType === chartDefaults.CHART_TYPE.HISTOGRAM) {
+            this.drawHistograms();
+        }
+    }
+
+    updateRelativeWidth ({ relativeWidth }) {
+        const { options, scales } = this;
+        const { xScale, levelScale } = scales;
+
+        this.relativeWidth = relativeWidth;
+        this.svg.attr('width', `${relativeWidth}px`);
+        xScale.range([0, relativeWidth - options.margin.left - options.margin.right]);
+
+        if (options.showLevels) {
+            xScale.range([0, relativeWidth - options.margin.left - (options.margin.right * 2)]);
+            levelScale.range([0, relativeWidth - options.margin.left - options.margin.right - chartDefaults.LEVELS_PADDING]);
+        }
+
+        this.redrawChart();
+    }
+
+    drawChart () {
+        const { options, relativeWidth, chartData, freeZoomChanged } = this;
+        this.axisData = getAxisesData(chartData, options);
+        this.scales = getScales(this);
+
+        if (freeZoomChanged) {
+            this.handleFreeZoomChanged();
+        }
+
+        this.mouseArea.on('mousemove', () => this.handleMouseArea(this.scales));
+
+        if (options.chartType === chartDefaults.CHART_TYPE.LINE) {
+            setTimeout(() => {
+                this.drawLines();
+            }, chartDefaults.ANIMATION_DELAY);
+        } else {
+            this.drawHistograms();
+        }
+
+        this.drawAxis();
+        this.drawGridLines();
+        this.handleDraw();
+
+        if (options.showLevels) {
+            this.drawLevels();
+
+            this.lines.append('clipPath')
+                .attr('id', 'levelClipPath')
+                .attr('class', styles['level-clip'])
+                .append('rect')
+                .attr('class', styles['clipPath-rect-level'])
+                .attr('width', relativeWidth - options.margin.right - options.margin.left)
+                .attr('height', options.height - options.margin.top)
+                .attr('transform', `translate(0, ${options.margin.top})`);
+
+            this.levelColumn = this.lines.append('rect')
+                .attr('class', styles['level-column'])
+                .attr('width', options.margin.right)
+                .attr('height', options.height - options.margin.top)
+                .attr('transform', `translate(${relativeWidth - (options.margin.right * 2) - options.margin.left},${options.margin.top * 2})`);
+
+            this.levelColumn.moveToBack();
+        }
+    }
+
+    drawAxis () {
+        const { scales, options, zoom, relativeWidth, freeZoomSelection, axisData } = this;
+        const { height, timeScale, locale, unit, showAxis } = options;
+        const { xScale, yScale } = scales;
+
+        if (showAxis) {
+            this.xAxisFunction = d3.axisBottom(xScale)
+                .tickFormat(() => '')
+                .tickPadding(chartDefaults.AXIS_TICK_SIZE)
+                .tickSize(chartDefaults.AXIS_TICK_SIZE)
+                .tickValues(timeScale
+                    ? xAxisTimeGraduation(xScale, timeScale, relativeWidth)
+                    : axisData.xAxisData);
+
+            this.yAxisFunction = d3.axisLeft(yScale)
+                .tickSize(chartDefaults.AXIS_TICK_SIZE)
+                .tickPadding(chartDefaults.Y_AXIS_MARGIN / chartDefaults.TWO)
+                .tickValues(yAxisGraduation(zoom.level, freeZoomSelection
+                    ? yScale.domain()
+                    : axisData.yAxisData, options.selectedSourceOfData))
+                .tickFormat((dataValue) => yAxisTickTemplate(dataValue, locale, unit));
+
+            this.xAxis
+                .attr('class', styles['x-axis'])
+                .attr('transform', `translate(0, ${height})`);
+
+            // disable handlers for custom x axis
+            if (options.timeScale) {
+                this.xAxis.selectAll('path')
+                    .on('mouseover', this.handleAxisOver)
+                    .on('mousemove', this.handleAxisOver);
+            }
+
+            this.xAxis.transition()
+                .call(this.xAxisFunction);
+
+            this.xAxis.selectAll(`.${styles['x-axis']} g.tick`)
+                .selectAll('foreignObject')
+                .remove();
+
+            this.xAxis.selectAll('g.tick').append('svg:foreignObject')
+                .attr('width', chartDefaults.AXIS_TICK_WIDTH)
+                .attr('height', chartDefaults.AXIS_TICK_HEIGHT)
+                .attr('x', chartDefaults.AXIS_TICK_PADDING_TOP)
+                .attr('y', chartDefaults.AXIS_TICK_PADDING_RIGHT)
+                .append('xhtml:div')
+                .html((dataValue) => xAxisTickTemplate(dataValue, timeScale, locale, xScale, freeZoomSelection));
+
+            // disable handlers for custom x axis
+            if (options.timeScale) {
+                this.xAxis.selectAll(`.${styles['x-axis']} g.tick`)
+                    .on('mouseover', this.handleAxisLabelOver)
+                    .on('mouseleave', this.handleAxisOut);
+            }
+
+            this.yAxis.attr('class', styles['y-axis']);
+
+            this.yAxis.transition()
+                .call(this.yAxisFunction)
+                .duration(chartDefaults.AXIS_TRANSITION)
+                .ease(d3.easeLinear);
+
+            if (options.cropGridLines) {
+                this.yAxis.selectAll('path')
+                    .attr('class', styles['path-visible']);
+            }
+        }
+    }
+
+    drawLines () {
+        const { chartData, scales, options } = this;
+        const { locale } = options;
+        const { xScale, yScale } = scales;
+        const valuesCount = lodash.first(chartData).values.length;
+
+        this.lineFunction = d3.line()
+            .defined((dataValue) => dataValue.y !== null)
+            .x((dataValue) => xScale(dataValue.x))
+            .y((dataValue) => getValueScaleFormat(dataValue.y, locale, yScale))
+            .curve(d3[options.curveType]);
+
+        if (!options.showLevels) {
+            this.lines.selectAll(`.${styles['line-group-level']}`).remove();
+            this.lines.selectAll(`.${styles['level-column']}`).remove();
+            this.lines.selectAll(`.${styles['level-clip']}`).remove();
+            this.lines.selectAll(`.${styles['circle-group-level']}`).remove();
+        }
+
+        const lineGroups = this.lines.selectAll(`.${styles['line-group']}`)
+            .data(getResultDataSet(chartData, 'y'), (line) => line.id);
+
+        lineGroups.exit().remove();
+
+        lineGroups.select(`.${styles['line']}`)
+            .transition()
+            .duration(chartDefaults.ANIMATION_SPEED)
+            .attr('d', (dataValue) => this.lineFunction(getLineValues(dataValue, options)))
+            .style('stroke', (dataValue) => dataValue.color);
+
+        const lineGroup = lineGroups.enter()
+            .append('g')
+            .attr('class', styles['line-group']);
+
+        lineGroup.append('path')
+            .attr('class', styles['line'])
+            .attr('d', (dataValue) => this.lineFunction(getLineValues(dataValue, options)))
+            .style('stroke', (dataValue) => dataValue.color)
+            .attr('clip-path', (dataValue) => `url(#rectClip${dataValue.id})`);
+
+        if (options.showPoints) {
+            const circles = lineGroups.select(`.${styles['circle-group']}`)
+                .selectAll('circle')
+                .data((dataValue) => dataValue.values, (data) => data.x);
+
+            circles.exit().remove();
+
+            circles.transition()
+                .duration(chartDefaults.ANIMATION_SPEED)
+                .attr('cx', (dataValue) => xScale(dataValue.x))
+                .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale))
+                .attr('data-color', (dataValue) => dataValue.color);
+
+            const addCircles = circles.enter();
+
+            const newCircles = lineGroup.append('g')
+                .attr('class', styles['circle-group'])
+                .attr('clip-path', (dataValue) => `url(#rectClip${dataValue.id})`)
+                .attr('data-color', (dataValue) => dataValue.color)
+                .attr('id', (dataValue) => dataValue.id)
+                .selectAll('circle')
+                .data((dataValue) => dataValue.values, (data) => data.x)
+                .enter();
+
+            const allNewCircles = newCircles.merge(addCircles);
+
+            allNewCircles
+                .append('circle')
+                .attr('cx', (dataValue) => xScale(dataValue.x))
+                .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale))
+                .attr('class', styles['circle'])
+                .attr('fill', function () {
+                    return options.pointsFilling
+                        ? this.parentNode.getAttribute('data-color')
+                        : chartDefaults.TRANSPARENT;
+                })
+                .attr('stroke', function () {
+                    return this.parentNode.getAttribute('data-color');
+                })
+                .attr('stroke-width', function () {
+                    return options.pointsFilling ? 0 : chartDefaults.STROKE_POINT;
+                })
+                .on('mouseover', this.handlePointOver)
+                .on('mouseleave', this.handlePointOut)
+                .on('click', this.handlePointClick);
+
+            this.lines.selectAll('circle')
+                .attr('r', (dataValue) => {
+                    if (valuesCount === 1) {
+                        return chartDefaults.FOCUSED_POINT_RADIUS;
+                    }
+
+                    if (self.selected.point) {
+                        if (this.getDataValue(self.selected.point.x) === this.getDataValue(dataValue.x) &&
+                            dataValue.y === self.selected.point.y) {
+                            if (self.selected.action === chartDefaults.ACTION_CLICK) {
+                                return options.pointRadius.selected;
+                            }
+                            return options.pointRadius.focused;
+                        }
+                    }
+                    return options.pointRadius.default;
+                });
+        } else {
+            this.lines.selectAll(`.${styles['circle-group']}`).remove();
+        }
+
+        this.drawAreas(lineGroups, lineGroup);
+        this.drawClipPath();
+    }
+
+    drawHistograms () {
+        const { chartData, scales, options } = this;
+        const { xScale, yScale } = scales;
+
+        this.histograms.selectAll('*').remove();
+
+        const histogramGroups = this.histograms.selectAll(`.${styles['histogram-group']}`)
+            .data(getResultDataSet(chartData, 'y'), (line) => line.id);
+
+        const histogramGroup = histogramGroups.enter()
+            .append('g')
+            .attr('class', styles['histogram-group'])
+            .attr('data-index', (dataValue, index) => index)
+            .attr('data-color', (dataValue) => dataValue.color);
+
+        histogramGroup.selectAll(`.${styles['histogram-rect']}`)
+            .data((dataValue) => getHistogramsData(dataValue, scales))
+            .enter()
+            .append('rect')
+            .attr('class', styles['histogram-rect'])
+            .attr('width', function (dataValue) {
+                const fullWidth = xScale(dataValue.x[1]) - xScale(dataValue.x[0]);
+                const marginWidth = fullWidth * chartDefaults.HISTOGRAM_MARGIN_WIDTH;
+
+                return (fullWidth - (marginWidth * chartDefaults.TWO)) / chartData.length;
+            })
+            .attr('x', function (dataValue) {
+                const chartIndex = this.parentNode.getAttribute('data-index');
+                const fullWidth = xScale(dataValue.x[1]) - xScale(dataValue.x[0]);
+                const marginWidth = fullWidth * chartDefaults.HISTOGRAM_MARGIN_WIDTH;
+
+                return marginWidth + (this.getAttribute('width') * chartIndex);
+            })
+            .attr('transform', function (dataValue) {
+                return `translate(${xScale(dataValue.x[0])},${yScale(dataValue.y)})`;
+            })
+
+            .attr('height', (dataValue) => {
+                const height = options.height - yScale(dataValue.y) + (chartDefaults.HISTOGRAM_LINE_HEIGHT / chartDefaults.TWO);
+
+                return height >= 0 ? height : 0;
+            })
+            .attr('fill', function () {
+                return this.parentNode.getAttribute('data-color');
+            })
+            .on('mouseover', this.handleHistogramBarOver);
+
+        histogramGroup.selectAll(`.${styles['histogram-line']}`)
+            .data((dataValue) => getHistogramsData(dataValue, scales))
+            .enter()
+            .append('rect')
+            .attr('class', styles['histogram-line'])
+            .attr('width', function (dataValue) {
+                const fullWidth = xScale(dataValue.x[1]) - xScale(dataValue.x[0]);
+                const marginWidth = fullWidth * chartDefaults.HISTOGRAM_MARGIN_WIDTH;
+
+                return (fullWidth - (marginWidth * chartDefaults.TWO)) / chartData.length;
+            })
+            .attr('x', function (dataValue) {
+                const chartIndex = this.parentNode.getAttribute('data-index');
+                const fullWidth = xScale(dataValue.x[1]) - xScale(dataValue.x[0]);
+                const marginWidth = fullWidth * chartDefaults.HISTOGRAM_MARGIN_WIDTH;
+
+                return marginWidth + (this.getAttribute('width') * chartIndex);
+            })
+            .attr('transform', function (dataValue) {
+                return `translate(${xScale(dataValue.x[0])},${yScale(dataValue.y) -
+                    (chartDefaults.HISTOGRAM_LINE_HEIGHT / chartDefaults.TWO)})`;
+            })
+            .attr('height', chartDefaults.HISTOGRAM_LINE_HEIGHT)
+            .attr('fill', function () {
+                return this.parentNode.getAttribute('data-color');
+            })
+            .on('mouseover', this.handleHistogramBarOver);
+    }
+
+    drawLevels () {
+        const { chartData, scales, options } = this;
+        const { locale } = options;
+        const { yScale, levelScale } = scales;
+        const levelsData = getLevelsData(chartData);
+
+        this.lineLevel = d3.line()
+            .defined((dataValue) => dataValue.y !== null)
+            .x((dataValue) => levelScale(dataValue.x))
+            .y((dataValue) => getValueScaleFormat(dataValue.y, locale, yScale))
+            .curve(d3[options.curveType]);
+
+        this.lines.selectAll(`.${styles['level-clip']}`).remove();
+        this.lines.selectAll(`.${styles['line-group-level']}`).remove();
+        this.lines.selectAll(`.${styles['circle-group-level']}`).remove();
+        this.lines.selectAll(`.${styles['level-column']}`).remove();
+
+
+        const lineGroups = this.lines.selectAll(`.${styles['line-group-level']}`)
+            .data(getResultDataSet(levelsData, 'y'), (line) => line.id);
+
+        lineGroups.selectAll(`.${styles['line-level']}`)
+            .attr('d', (dataValue) => this.lineLevel(dataValue.values));
+
+        lineGroups.selectAll('circle')
+            .attr('cx', (dataValue) => levelScale(dataValue.x))
+            .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale));
+
+
+        const lineGroup = lineGroups.enter()
+            .append('g')
+            .attr('class', styles['line-group-level']);
+
+        lineGroup
+            .append('path')
+            .attr('class', styles['line-level'])
+            .attr('d', (dataValue) => this.lineLevel(dataValue.values))
+            .attr('clip-path', 'url(#levelClipPath)')
+            .style('stroke', (dataValue) => dataValue.color)
+            .style('stroke-dasharray', '5,3');
+
+        if (options.showPoints) {
+            lineGroup.append('g')
+                .attr('class', styles['circle-group-level'])
+                .style('fill', (dataValue) => dataValue.color)
+                .attr('id', (dataValue) => dataValue.id)
+                .selectAll('circle')
+                .data((dataValue) => [lodash.last(dataValue.values)])
+                .enter()
+                .append('circle')
+                .attr('cx', (dataValue) => levelScale(dataValue.x))
+                .attr('cy', (dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale))
+                .attr('class', styles['circle-level'])
+                .attr('r', chartDefaults.FOCUSED_POINT_RADIUS)
+                .on('mouseover', this.handleLevelPointOver)
+                .on('mouseleave', this.handleLevelPointOut);
+        }
+
+        lineGroups.exit().remove();
+    }
+
+    drawAreas (parentNode, enterNode) {
+        const { scales, options } = this;
+        const { xScale, yScale } = scales;
+
+        this.areaFunction = d3.area()
+            .defined((dataValue) => dataValue.y !== null)
+            .x((dataValue) => xScale(dataValue.x))
+            .y0(options.height)
+            .y1((dataValue) => getValueScaleFormat(dataValue.y, options.locale, yScale))
+            .curve(d3[options.curveType]);
+
+        parentNode.select(`.${styles['area']}`)
+            .transition()
+            .duration(chartDefaults.ANIMATION_SPEED)
+            .attr('d', (dataValue) => this.areaFunction(getLineValues(dataValue, options)))
+            .style('fill', (dataValue) => dataValue.color);
+
+        enterNode.append('path')
+            .attr('class', styles['area'])
+            .style('fill', (dataValue) => dataValue.color)
+            .style('fill-opacity', (dataValue) => options.hideAreaId &&
+                dataValue.id === options.hideAreaId ? 0 : dataValue.opacity)
+            .attr('clip-path', (dataValue) => `url(#rectClip${dataValue.id})`)
+            .attr('d', (dataValue) => this.areaFunction(getLineValues(dataValue, options)));
+    }
+
+    drawClipPath () {
+        const { chartData, options, scales } = this;
+        const { xScale } = scales;
+
+        const clipPathNodes = this.clipPath.selectAll('clipPath')
+            .data(getResultDataSet(chartData, 'y'), (line) => line.id);
+
+        clipPathNodes.exit().remove();
+
+        clipPathNodes.selectAll(`.${styles['clipPath-rect']}`)
+            .attr('width', xScale.range()[1]);
+
+        clipPathNodes.enter()
+            .append('clipPath')
+            .attr('id', (dataValue) => `rectClip${dataValue.id}`)
+            .append('rect')
+            .attr('class', styles['clipPath-rect'])
+            .attr('width', 0)
+            .attr('height', options.height)
+            .transition()
+            .attr('width', xScale.range()[1])
+            .duration(chartDefaults.ANIMATION_SPEED)
+            .ease(d3.easeLinear);
+    }
+
+    drawGridLines () {
+        const { scales, options, zoom, relativeWidth, freeZoomSelection, axisData } = this;
+        const { height, timeScale, showAxis } = options;
+        const { xScale, yScale } = scales;
+
+        if (showAxis) {
+            const xAxisFunction = d3.axisBottom(xScale)
+                .tickFormat('')
+                .tickPadding(chartDefaults.AXIS_TICK_SIZE)
+                .tickSize(options.verticalGrid ? -height + options.margin.top : chartDefaults.AXIS_TICK_SIZE)
+                .tickValues(timeScale
+                    ? xAxisTimeGraduation(xScale, timeScale, relativeWidth)
+                    : axisData.xAxisData);
+
+            const yAxisFunction = d3.axisLeft(yScale)
+                .tickSize(options.horizontalGrid ? -xScale.range()[1] : chartDefaults.AXIS_TICK_SIZE)
+                .tickPadding(chartDefaults.AXIS_TICK_SIZE)
+                .tickValues(yAxisGraduation(zoom.level, freeZoomSelection
+                    ? yScale.domain()
+                    : axisData.yAxisData, options.selectedSourceOfData))
+                .tickFormat('');
+
+            this.grid.selectAll('*').remove();
+
+            const xAxis = this.grid.append('g')
+                .attr('class', styles['x-axis-grid'])
+                .attr('transform', `translate(0, ${height})`);
+
+            xAxis.transition()
+                .call(xAxisFunction);
+
+            const yAxis = this.grid.append('g')
+                .attr('class', styles['y-axis-grid']);
+
+            yAxis.transition()
+                .call(yAxisFunction)
+                .duration(chartDefaults.AXIS_TRANSITION)
+                .ease(d3.easeLinear);
+
+            if (options.cropGridLines) {
+                this.grid.selectAll('#gridClipPath').remove();
+
+                this.grid
+                    .attr('clip-path', 'url(#gridClipPath)')
+                    .append('clipPath')
+                    .attr('id', 'gridClipPath')
+                    .append('path')
+                    .attr('d', this.lines.selectAll(`path.${styles['area']}`).attr('d'));
+            }
+        }
+    }
+}
+
+Object.assign(Chart.prototype, chartHandlers);
+
+export default Chart;

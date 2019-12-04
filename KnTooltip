@@ -1,0 +1,155 @@
+import React, { Component } from 'react';
+import { effect, position, theme } from './settings';
+
+import PropTypes from 'prop-types';
+import ReactDOM from 'react-dom';
+import TooltipPopup from './TooltipPopup';
+import { nodeListToArray } from 'helpers/array';
+
+const propTypes = {
+    children: PropTypes.oneOfType([PropTypes.string, PropTypes.node]),
+    className: PropTypes.string,
+    delayHide: PropTypes.number,
+    delayShow: PropTypes.number,
+    effect: PropTypes.string,
+    hasArrow: PropTypes.bool,
+    hasOverlay: PropTypes.bool,
+    id: PropTypes.string.isRequired,
+    offset: PropTypes.number,
+    onDisplay: PropTypes.func,
+    position: PropTypes.string,
+    theme: PropTypes.string,
+};
+
+const defaultProps = {
+    children: null,
+    className: null,
+    delayHide: null,
+    delayShow: null,
+    effect: effect.SOLID,
+    hasArrow: true,
+    hasOverlay: false,
+    offset: 10,
+    onDisplay: null,
+    position: position.RIGHT,
+    theme: theme.DARK,
+};
+
+class KnTooltip extends Component {
+    constructor (props) {
+        super(props);
+        this.defaultNode = null;
+        this.delayShowTimeout = null;
+        this.delayHideTimeout = null;
+    }
+
+    componentDidMount () {
+        this.addListeners();
+    }
+
+    componentWillUnmount () {
+        this.removeListeners();
+        this.unmountTooltip();
+    }
+
+    getTargetArray () {
+        return nodeListToArray(document.querySelectorAll(`[data-tooltip-id="${this.props.id}"]`));
+    }
+
+    addListeners () {
+        this.getTargetArray().forEach((target) => {
+            target.addEventListener('mouseenter', this.showTooltip, false);
+
+            if (!this.props.hasOverlay) {
+                target.addEventListener('mouseleave', this.hideTooltip, false);
+            }
+        });
+    }
+
+    removeListeners () {
+        this.getTargetArray().forEach((target) => {
+            target.removeEventListener('mouseenter', this.showTooltip, false);
+
+            if (!this.props.hasOverlay) {
+                target.removeEventListener('mouseleave', this.hideTooltip, false);
+            }
+        });
+    }
+
+    mountTooltip = (target) => {
+        if (this.defaultNode === null) {
+            this.defaultNode = document.createElement('div');
+            document.body.appendChild(this.defaultNode);
+        }
+
+        ReactDOM.render(
+            <TooltipPopup
+                className={this.props.className}
+                effect={this.props.effect}
+                hasArrow={this.props.hasArrow}
+                hasOverlay={this.props.hasOverlay}
+                hideTooltip={this.hideTooltip}
+                offset={window.parseInt(this.props.offset)}
+                onDisplay={this.props.onDisplay}
+                position={this.props.position}
+                targetCoordinates={target.getBoundingClientRect()}
+                theme={this.props.theme}
+            >
+                {this.props.children}
+            </TooltipPopup>,
+            this.defaultNode
+        );
+    }
+
+    unmountTooltip = () => {
+        if (this.defaultNode) {
+            ReactDOM.unmountComponentAtNode(this.defaultNode);
+            document.body.removeChild(this.defaultNode);
+            this.defaultNode = null;
+        }
+    }
+
+    showTooltip = (event) => {
+        const hasCurrentTarget = this.getTargetArray().some((target) => target === event.currentTarget);
+
+        if (hasCurrentTarget) {
+            const { currentTarget } = event;
+
+            window.clearTimeout(this.delayShowTimeout);
+
+            if (this.props.delayShow) {
+                this.delayShowTimeout = window.setTimeout(
+                    () => {
+                        this.mountTooltip(currentTarget);
+                    },
+                    this.props.delayShow
+                );
+            } else {
+                this.mountTooltip(currentTarget);
+            }
+        }
+    }
+
+    hideTooltip = () => {
+        window.clearTimeout(this.delayShowTimeout);
+        window.clearTimeout(this.delayHideTimeout);
+
+        if (this.props.delayHide) {
+            this.delayHideTimeout = window.setTimeout(
+                this.unmountTooltip,
+                this.props.delayHide
+            );
+        } else {
+            this.unmountTooltip();
+        }
+    }
+
+    render () {
+        return null;
+    }
+}
+
+KnTooltip.propTypes = propTypes;
+KnTooltip.defaultProps = defaultProps;
+
+export default KnTooltip;

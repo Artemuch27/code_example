@@ -1,0 +1,28 @@
+import { httpRequest } from 'helpers/network';
+
+export const updateLocale = (localeData) => {
+    return httpRequest({
+        method: 'POST',
+        responseType: 'string',
+        url: '/admin/handleUpdateLocale',
+        data: localeData
+    });
+};
+
+export const updateAccountStatus = (accountStatus) => {
+    return httpRequest({
+        method: 'POST',
+        responseType: 'json',
+        url: '/admin/setAccountStatus',
+        data: accountStatus
+    });
+};
+
+export const updateViewPermission = (permissionId) => {
+    return httpRequest({
+        method: 'POST',
+        responseType: 'json',
+        url: '/admin/setViewStatus',
+        data: permissionId
+    });
+};

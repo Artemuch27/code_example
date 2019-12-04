@@ -1,0 +1,48 @@
+import * as types from 'constants/actionTypes/resultPageTypes';
+
+export const toggleLoader = (status) => ({
+    type: types.TOGGLE_LOADER,
+    status
+});
+
+export const setRightPanelOpenState = (isRightPanelOpen) => ({
+    type: types.SET_RIGHTPANEL_OPEN_STATE,
+    isRightPanelOpen
+});
+
+export const toggleLongLoadingDataPopup = (status, requestType, requestId) => ({
+    type: types.TOGGLE_LONG_LOADING_DATA_POPUP,
+    status,
+    requestType,
+    requestId
+});
+
+export const updateActiveGraph = (activeGraph) => ({
+    type: types.UPDATE_ACTIVE_GRAPH,
+    activeGraph
+});
+
+export const updateActiveGraphType = (activeGraphType) => ({
+    type: types.UPDATE_ACTIVE_GRAPH_TYPE,
+    activeGraphType
+});
+
+export const updateGraphSettings = (settings) => ({
+    type: types.SET_GRAPH_SETTINGS,
+    settings
+});
+
+export const setIsLoadingDataState = (status) => ({
+    type: types.SET_IS_LOADING_DATA_STATE,
+    status
+});
+
+export const toggleMessageBanner = (config) => ({
+    type: types.TOGGLE_MESSAGE_BANNER,
+    config
+});
+
+export const toggleRightPanelLoader = (status) => ({
+    type: types.TOGGLE_RIGHT_PANEL_LOADER,
+    status
+});

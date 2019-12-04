@@ -1,0 +1,537 @@
+/* eslint max-statements: ["off"] */
+/* eslint complexity: ["off"] */
+
+import * as actionTypes from 'constants/actionTypes';
+import * as types from 'constants/actionTypes/resultPageTypes';
+import * as userTypes from 'constants/actionTypes/userTypes';
+
+import {
+    REFERENCE_KEY,
+    RESULT_PAGE_TYPE,
+    VISIT_MODE
+} from 'constants/resultPage/configConstant';
+import { getAvailableGraphTypes, getAvailableGraphs, getLoadingBreakdowns } from 'helpers/resultPage/uiHelper';
+
+import { PERIOD_TYPES } from 'constants/resultPage/graph/graphConfiguration';
+import lodash from 'lodash';
+
+const uiReducer = (state = {}, action) => {
+    switch (action.type) {
+        case types.EXPERIMENT_LOAD_CONTENT_REQUEST_RESOLVED: {
+            const availableChartTypes = getAvailableGraphTypes(action.experimentContent.reportingTools.selectedTools, RESULT_PAGE_TYPE.EXPERIMENT);
+
+            return {
+                ...state,
+                resultPageType: RESULT_PAGE_TYPE.EXPERIMENT,
+                isKameleoonUse: action.experimentContent.isKameleoonUse,
+                initialLoad: {
+                    ...state.initialLoad,
+                    hasContentData: true
+                },
+                goalsOrder: [...action.experimentContent.goals.goalsListOrder],
+                variationsOrder: [...action.experimentContent.variationsOrder],
+                printSettings: {
+                    ...state.printSettings,
+                    availableChartTypes
+                }
+            };
+        }
+        case types.PERSONALIZATION_LOAD_CONTENT_REQUEST_RESOLVED: {
+            const availableChartTypes = getAvailableGraphTypes(action.payload.reportingTools.selectedTools, RESULT_PAGE_TYPE.PERSONALIZATION);
+
+            return {
+                ...state,
+                resultPageType: RESULT_PAGE_TYPE.PERSONALIZATION,
+                initialLoad: {
+                    ...state.initialLoad,
+                    hasContentData: true
+                },
+                goalsOrder: action.payload.goalsListOrder,
+                mainGoalId: action.payload.mainGoalId,
+                variationsOrder: [REFERENCE_KEY],
+                printSettings: {
+                    ...state.printSettings,
+                    availableChartTypes
+                }
+            };
+        }
+        case types.INIT_PREDICTIVE_UI: {
+            return {
+                ...state,
+                resultPageType: RESULT_PAGE_TYPE.PREDICTIVE,
+                visitMode: VISIT_MODE.VISITOR,
+            };
+        }
+        case types.LOAD_GRAPH_STATISTICS: {
+            const tables = {};
+
+            lodash.forIn(action.chartData, (item, index) => {
+                tables[index] = PERIOD_TYPES.DAY.id.toLowerCase();
+            });
+
+            return {
+                ...state,
+                printSettings: {
+                    ...state.printSettings,
+                    availableGraphs: getAvailableGraphs(action.chartData)
+                },
+                chartInterval: {
+                    ...state.chartInterval,
+                    tables,
+                }
+            };
+        }
+        case types.REMOVE_TABLES_CHART_INTERVALS:
+            return {
+                ...state,
+                chartInterval: {
+                    ...state.chartInterval,
+                    tables: {}
+                }
+            };
+        case types.EXPERIMENT_LOAD_STATISTICS_REQUEST_RESOLVED: {
+            return {
+                ...state,
+                initialLoad: {
+                    ...state.initialLoad,
+                    hasStatisticsData: true
+                }
+            };
+        }
+        case types.PERSONALIZATION_LOAD_STATISTICS_REQUEST_RESOLVED: {
+            return {
+                ...state,
+                initialLoad: {
+                    ...state.initialLoad,
+                    hasStatisticsData: true
+                },
+                printSettings: {
+                    ...state.printSettings,
+                    availableGraphs: getAvailableGraphs(action.result.chartData)
+                }
+            };
+        }
+        case userTypes.USER_LOAD_GENERAL_DATA_REQUEST_RESOLVED: {
+            return {
+                ...state,
+                initialLoad: {
+                    ...state.initialLoad,
+                    hasUserData: true
+                }
+            };
+        }
+        case actionTypes.CHANGE_GOALS_ORDER:
+            return {
+                ...state,
+                goalsOrder: action.goalsOrder,
+                isGoalsOrderChanged: action.isGoalsOrderChanged || state.isGoalsOrderChanged
+            };
+        case types.SET_RIGHTPANEL_OPEN_STATE:
+            return {
+                ...state,
+                isRightPanelOpen: action.isRightPanelOpen
+            };
+        case types.UPDATE_COLUMNS_ORDER:
+            return {
+                ...state,
+                columns: {
+                    ...state.columns,
+                    order: {
+                        ...state.columns.order,
+                        [action.tableId]: action.columnsOrder
+                    }
+                }
+            };
+        case types.UPDATE_COLUMNS_VISIBLE:
+            return {
+                ...state,
+                columns: {
+                    ...state.columns,
+                    visible: {
+                        ...state.columns.visible,
+                        [action.tableId]: action.columnsVisible
+                    }
+                }
+            };
+        case types.RESET_COLUMNS_OPTIONS:
+            return {
+                ...state,
+                columns: {
+                    order: {},
+                    visible: {}
+                }
+            };
+
+        case types.TOGGLE_LONG_LOADING_DATA_POPUP: {
+            let currentRequests = state.longLoadingRequests;
+
+            if (action.requestId) {
+                if (action.status) {
+                    currentRequests.push({
+                        id: action.requestId,
+                        type: action.requestType
+                    });
+                } else {
+                    currentRequests = state.longLoadingRequests.filter((item) => item.id !== action.requestId);
+                }
+            } else {
+                currentRequests = action.status
+                    ? state.longLoadingRequests
+                    : [];
+            }
+
+            return {
+                ...state,
+                isLongLoadingPopupOpen: action.status,
+                longLoadingRequests: currentRequests
+            };
+        }
+        case types.TOGGLE_MESSAGE_BANNER:
+            return {
+                ...state,
+                messageBanner: action.config
+            };
+
+        case types.SET_FILTERS_OPTIONS:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    filtersOptions: action.filtersOptions
+                }
+            };
+
+        case types.SET_SELECTED_FILTER_TYPE:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    selectedFilterType: action.selectedFilterType
+                }
+            };
+
+        case types.CREATE_FILTER: {
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    filtersList: [
+                        ...state.filters.filtersList,
+                        action.template
+                    ]
+                }
+            };
+        }
+
+        case types.UPDATE_FILTERS_LIST:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    filtersList: action.filtersList
+                }
+            };
+
+        case types.RESET_FILTER_POPUP_STATE: {
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    filtersList: action.activeList,
+                    selectedFilterType: ''
+                }
+            };
+        }
+
+        case types.SET_DATE_RANGES:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    dateRange: action.dateRanges
+                }
+            };
+
+        case types.SET_VISIT_VISITOR:
+            return {
+                ...state,
+                visitMode: action.visitMode
+            };
+
+        case types.SET_CONVERSIONS:
+            return {
+                ...state,
+                conversionMode: action.conversionMode
+            };
+
+        case types.SET_USE_BAYESIAN:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    useBayesian: action.useBayesian
+                }
+            };
+
+        case types.SET_IS_ENABLED_BAYESIAN:
+            return {
+                ...state,
+                filters: {
+                    ...state.filters,
+                    isEnabledBayesian: action.isEnabledBayesian
+                }
+            };
+        case types.UPSERT_BREAKDOWN: {
+            const breakdown = {
+                [action.params.breakdown.type]: {
+                    customData: action.params.breakdown.customData,
+                    groupResults: action.params.breakdown.groupResults,
+                    limitResults: action.params.breakdown.limitResults
+                }
+            };
+
+            if (action.params.applyToAll) {
+                const breakdownsForAll = {};
+
+                if (action.params.goalIds) {
+                    action.params.goalIds.forEach((id) => {
+                        breakdownsForAll[id] = breakdown;
+                    });
+
+                    return {
+                        ...state,
+                        breakdowns: {
+                            ...state.breakdowns,
+                            breakdownsForAll
+                        }
+                    };
+                }
+
+                state[`${state.displayMode}Order`].forEach((id) => {
+                    breakdownsForAll[id] = breakdown;
+                });
+
+                return {
+                    ...state,
+                    breakdowns: breakdownsForAll
+                };
+            }
+
+            return {
+                ...state,
+                breakdowns: {
+                    ...state.breakdowns,
+                    [action.params.tableId]: breakdown
+                }
+            };
+        }
+        case types.REMOVE_BREAKDOWN: {
+            const newBreakdowns = {};
+
+            lodash.map(state.breakdowns, (table, id) => {
+                if (id === String(action.tableId)) {
+                    if (lodash.keys(table).length > 1) {
+                        newBreakdowns[id] = {};
+                        lodash.map(table, (breakdown, type) => {
+                            if (type !== action.breakdownType) {
+                                newBreakdowns[id][type] = state.breakdowns[id][type];
+                            }
+                        });
+                    }
+                } else {
+                    newBreakdowns[id] = state.breakdowns[id];
+                }
+            });
+
+            return {
+                ...state,
+                breakdowns: newBreakdowns
+            };
+        }
+        case types.REMOVE_ALL_BREAKDOWNS:
+            return {
+                ...state,
+                breakdowns: {}
+            };
+        case actionTypes.CHANGE_VARIATION_ORDER:
+            return {
+                ...state,
+                variationsOrder: action.variationsOrder
+            };
+
+        case types.TOGGLE_LOADER: {
+            return {
+                ...state,
+                isLoaderShown: action.status
+            };
+        }
+
+        case types.TOGGLE_RIGHT_PANEL_LOADER: {
+            return {
+                ...state,
+                isRightPanelLoaderShown: action.status
+            };
+        }
+
+        case types.SET_IS_LOADING_DATA_STATE: {
+            return {
+                ...state,
+                isLoadingData: action.status
+            };
+        }
+
+        case types.SET_IS_LOADING_BREAKDOWN_DATA_STATE: {
+            return {
+                ...state,
+                isLoadingBreakdownData: getLoadingBreakdowns(state, action)
+            };
+        }
+
+        case types.SET_CURRENT_REFERENCE: {
+            return {
+                ...state,
+                referenceVariation: action.variationId
+            };
+        }
+
+        case types.UPDATE_CUSTOM_VIEW_SETTINGS:
+            return {
+                ...state,
+                displayMode: action.newView.displayMode,
+                referenceVariation: action.newView.referenceVariation,
+                variationsHidden: action.newView.variationsHidden,
+                goalsHidden: action.newView.goalsHidden
+            };
+        case types.SET_CUSTOM_VIEW_LIST:
+            return {
+                ...state,
+                customViews: {
+                    ...state.customViews,
+                    customViewList: [
+                        ...action.customViewList
+                    ]
+                }
+            };
+        case types.SET_DEFAULT_VIEW:
+            return {
+                ...state,
+                customViews: {
+                    ...state.customViews,
+                    defaultView: action.defaultView
+                }
+            };
+        case types.SET_CUSTOM_VIEW:
+            return {
+                ...state,
+                displayMode: action.customView.displayMode,
+                visitMode: action.customView.visitMode,
+                conversionMode: action.customView.conversionMode,
+                referenceVariation: action.customView.referenceVariation,
+                variationsHidden: action.customView.variationsHidden,
+                goalsHidden: action.customView.goalsHidden,
+                variationsOrder: action.customView.variationsOrder,
+                goalsOrder: action.customView.goalsOrder,
+                columns: {
+                    visible: action.customView.columns.visible,
+                    order: action.customView.columns.order,
+                },
+                filters: {
+                    ...state.filters,
+                    filtersList: action.customView.filters,
+                    useBayesian: action.customView.useBayesian,
+                    dateRange: action.customView.dateRange
+                },
+                customViews: {
+                    ...state.customViews,
+                    selectedView: action.customView.id
+                }
+            };
+        case types.SET_SELECTED_VIEW:
+            return {
+                ...state,
+                customViews: {
+                    ...state.customViews,
+                    selectedView: action.selectedView
+                }
+            };
+        case types.SET_ALERT_CONFIGURATION:
+            return {
+                ...state,
+                alertConfiguration: action.alertConfiguration
+            };
+        case types.SET_PAGE_SETTINGS:
+            return {
+                ...state,
+                displayMode: action.pageSettings.displayMode,
+                breakdowns: action.pageSettings.breakdowns,
+                visitMode: action.pageSettings.visitMode,
+                conversionMode: action.pageSettings.conversionMode,
+                referenceVariation: action.pageSettings.referenceVariation,
+                variationsHidden: action.pageSettings.variationsHidden,
+                goalsHidden: action.pageSettings.goalsHidden,
+                variationsOrder: action.pageSettings.variationsOrder,
+                goalsOrder: action.pageSettings.goalsOrder,
+                columns: action.pageSettings.columns,
+                filters: {
+                    ...state.filters,
+                    dateRange: action.pageSettings.dateRange,
+                    filtersList: action.pageSettings.filters,
+                    useBayesian: action.pageSettings.useBayesian,
+                    // TODO dateRange: action.pageSettings.dateRange
+                },
+                printSettings: {
+                    ...state.printSettings,
+                    activeGraph: action.pageSettings.activeGraph,
+                    activeGraphType: action.pageSettings.activeGraphType
+                }
+            };
+        case types.UPDATE_ACTIVE_GRAPH:
+            return {
+                ...state,
+                printSettings: {
+                    ...state.printSettings,
+                    activeGraph: action.activeGraph
+                }
+            };
+        case types.UPDATE_ACTIVE_GRAPH_TYPE:
+            return {
+                ...state,
+                printSettings: {
+                    ...state.printSettings,
+                    activeGraphType: action.activeGraphType
+                },
+            };
+        case types.UPDATE_MAIN_GRAPH_STATISTICS:
+            return action.params && action.params.chartInterval
+                ? {
+                    ...state,
+                    chartInterval: {
+                        ...state.chartInterval,
+                        main: action.params.chartInterval,
+                    },
+                }
+                : state;
+        case types.UPDATE_TABLE_GRAPH_STATISTICS:
+            return action.params && action.params.chartInterval
+                ? {
+                    ...state,
+                    chartInterval: {
+                        ...state.chartInterval,
+                        tables: {
+                            ...state.chartInterval.tables,
+                            [action.params.tableId]: action.params.chartInterval,
+                        }
+                    }
+                }
+                : state;
+        case types.SET_GRAPH_SETTINGS:
+            return {
+                ...state,
+                graphSettings: action.settings
+            };
+        default:
+            return state;
+    }
+};
+
+export default uiReducer;

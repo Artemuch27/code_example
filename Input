@@ -1,0 +1,268 @@
+import React, { PureComponent } from 'react';
+
+import PropTypes from 'prop-types';
+import Svg from 'components/common/svg';
+import classNames from 'classnames';
+import styles from './styles';
+
+const propTypes = {
+    autoFocus: PropTypes.bool,
+    autocomplete: PropTypes.oneOfType([
+        PropTypes.bool,
+        PropTypes.string
+    ]),
+    className: PropTypes.string,
+    disabled: PropTypes.bool,
+    hasDisabledBackground: PropTypes.bool,
+    hasError: PropTypes.bool,
+    hasSearch: PropTypes.bool,
+    inErrorMsg: PropTypes.string,
+    inSuccessMsg: PropTypes.string,
+    liveChange: PropTypes.bool,
+    maxLength: PropTypes.number,
+    name: PropTypes.string,
+    onBlur: PropTypes.func,
+    onChange: PropTypes.func.isRequired,
+    onClick: PropTypes.func,
+    onFocus: PropTypes.func,
+    onKeyDown: PropTypes.func,
+    onKeyUp: PropTypes.func,
+    outErrorMsg: PropTypes.string,
+    outIcon: PropTypes.string,
+    outSuccessMsg: PropTypes.string,
+    placeholder: PropTypes.string,
+    readonly: PropTypes.bool,
+    spellcheck: PropTypes.bool,
+    type: PropTypes.string,
+    value: PropTypes.oneOfType([
+        PropTypes.string,
+        PropTypes.number
+    ]),
+    wrapperClassName: PropTypes.string,
+};
+
+const defaultProps = {
+    autoFocus: false,
+    autocomplete: null,
+    className: null,
+    disabled: false,
+    hasDisabledBackground: true,
+    hasError: false,
+    hasSearch: false,
+    inErrorMsg: null,
+    inSuccessMsg: null,
+    liveChange: false,
+    maxLength: null,
+    name: null,
+    onBlur: () => null,
+    onClick: () => null,
+    onFocus: () => null,
+    onKeyDown: () => null,
+    onKeyUp: () => null,
+    outErrorMsg: null,
+    outIcon: 'warning',
+    outSuccessMsg: null,
+    placeholder: null,
+    readonly: false,
+    spellcheck: null,
+    type: 'text',
+    value: '',
+    wrapperClassName: null,
+};
+
+class Input extends PureComponent {
+    state = {
+        value: this.props.value,
+    };
+
+    componentWillReceiveProps (nextProps) {
+        if (this.props.value !== nextProps.value) {
+            this.setState({ value: nextProps.value });
+        }
+    }
+
+    handleChange = (event) => {
+        if (this.props.liveChange) {
+            this.props.onChange(event.target.value);
+        } else {
+            this.setState({ value: event.target.value });
+        }
+    }
+
+    handleBlur = () => {
+        if (!this.props.liveChange) {
+            this.props.onChange(this.state.value);
+        }
+        this.props.onBlur();
+    }
+
+    handleFocus = () => {
+        this.props.onFocus();
+    }
+
+    handleClear = () => {
+        if (this.props.liveChange) {
+            this.props.onChange('');
+        } else {
+            this.setState({ value: '' });
+        }
+    }
+
+    handleKeyDown = (event) => {
+        this.props.onKeyDown(event);
+    }
+
+    handleKeyUp = (event) => {
+        this.props.onKeyUp(event);
+    }
+
+    handleClick = (event) => {
+        this.props.onClick(event);
+    }
+
+    isValueGreaterThanZero = () => {
+        if (this.props.liveChange) {
+            return this.props.value.length > 0;
+        }
+
+        return this.state.value.length > 0;
+    }
+
+    getValue (value) {
+        if (typeof value === 'undefined' || value === null) {
+            return '';
+        }
+
+        return value;
+    }
+
+    getAutoComplete () {
+        if (typeof this.props.autocomplete === 'boolean') {
+            return this.props.autocomplete === false ? 'off' : 'on';
+        }
+
+        return this.props.autocomplete;
+    }
+
+    refInput = (ref) => {
+        this.input = ref;
+    }
+
+    renderMessage (msg, hasError, type = 'inside') {
+        return (
+            <span className={classNames(
+                styles['input__message'],
+                styles[`input__message_${type}`],
+                { [styles['input__message_error']]: hasError }
+            )}
+            >
+                {msg}
+            </span>
+        );
+    }
+
+    renderOutsideMessage (msg, hasError = false) {
+        return (
+            <div className={styles['input__container']}>
+                <Svg
+                    className={classNames(
+                        styles['input__icon'],
+                        { [styles['input__icon_error']]: hasError }
+                    )}
+                    type={this.props.outIcon}
+                />
+                {this.renderMessage(msg, hasError, 'outside')}
+            </div>
+        );
+    }
+
+    render () {
+        return (
+            <div className={classNames(
+                styles['input-wrapper'],
+                {
+                    [styles['input-wrapper_disabled']]: this.props.disabled,
+                    [styles['input-wrapper_disabled_background']]: this.props.disabled &&
+                                                                   this.props.hasDisabledBackground,
+                    [this.props.wrapperClassName]: this.props.wrapperClassName
+                }
+            )}
+            >
+                <input
+                    autoComplete={this.getAutoComplete()}
+                    autoFocus={this.props.autoFocus}
+                    className={classNames(
+                        styles['input'],
+                        {
+                            [styles['input_error']]: this.props.hasError,
+                            [styles['input_seach']]: this.props.hasSearch,
+                            [styles['input_disabled']]: this.props.disabled,
+                            [this.props.className]: this.props.className,
+                        }
+                    )}
+                    disabled={this.props.disabled}
+                    maxLength={this.props.maxLength}
+                    name={this.props.name}
+                    onBlur={this.handleBlur}
+                    onChange={this.handleChange}
+                    onClick={this.handleClick}
+                    onFocus={this.handleFocus}
+                    onKeyDown={this.handleKeyDown}
+                    onKeyUp={this.handleKeyUp}
+                    placeholder={this.props.placeholder}
+                    readOnly={this.props.readonly}
+                    ref={this.refInput}
+                    spellCheck={this.props.spellcheck}
+                    type={this.props.type}
+                    value={this.getValue(this.state.value)}
+                />
+                {
+                    this.props.inSuccessMsg &&
+                    this.renderMessage(this.props.inSuccessMsg)
+                }
+                {
+                    this.props.inErrorMsg &&
+                    this.renderMessage(this.props.inErrorMsg, true)
+                }
+                {
+                    this.props.outSuccessMsg &&
+                    this.renderOutsideMessage(this.props.outSuccessMsg)
+                }
+                {
+                    this.props.outErrorMsg &&
+                    this.renderOutsideMessage(this.props.outErrorMsg, true)
+                }
+                {
+                    this.props.hasSearch &&
+                    <Svg
+                        className={classNames(
+                            styles['input__icon'],
+                            styles['input__icon_search']
+                        )}
+                        type="search"
+                    />
+                }
+                {
+                    this.props.hasSearch && this.isValueGreaterThanZero() &&
+                    <button
+                        className={styles['input__clear']}
+                        onClick={this.handleClear}
+                    >
+                        <Svg
+                            className={classNames(
+                                styles['input__icon'],
+                                styles['input__icon_clear']
+                            )}
+                            type="crossBold"
+                        />
+                    </button>
+                }
+            </div>
+        );
+    }
+}
+
+Input.propTypes = propTypes;
+Input.defaultProps = defaultProps;
+
+export default Input;

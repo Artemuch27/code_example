@@ -1,0 +1,90 @@
+import React, { Component } from 'react';
+
+import PropTypes from 'prop-types';
+import { path } from 'helpers/svgPath';
+
+const propTypes = {
+    className: PropTypes.string,
+    frames: PropTypes.array,
+    hasAnimation: PropTypes.oneOfType([
+        PropTypes.bool,
+        PropTypes.string
+    ]),
+    stopAnimation: PropTypes.func,
+    style: PropTypes.object,
+    tabIndex: PropTypes.oneOfType([
+        PropTypes.number,
+        PropTypes.string
+    ]),
+    type: PropTypes.string,
+    viewBox: PropTypes.string,
+};
+
+const defaultProps = {
+    className: null,
+    frames: null,
+    hasAnimation: false,
+    stopAnimation: null,
+    style: {},
+    tabIndex: null,
+    type: null,
+    viewBox: '0 0 20 20',
+};
+
+class Svg extends Component {
+    state = { frame: 0 };
+
+    componentDidMount () {
+        if (this.props.hasAnimation === 'infinity') {
+            requestAnimationFrame(this.switchFrame);
+        }
+    }
+
+    componentDidUpdate (prevProps) {
+        if (prevProps.hasAnimation !== this.props.hasAnimation && this.props.hasAnimation) {
+            requestAnimationFrame(this.switchFrame);
+        }
+    }
+
+    switchFrame = () => {
+        if (this.props.frames) {
+            if (this.props.frames.length - 1 === this.state.frame) {
+                this.setState({ frame: 0 });
+
+                if (this.props.hasAnimation === 'infinity') {
+                    requestAnimationFrame(this.switchFrame);
+                } else {
+                    this.props.stopAnimation();
+                }
+            } else {
+                this.setState({ frame: this.state.frame + 1 });
+                requestAnimationFrame(this.switchFrame);
+            }
+        }
+    };
+
+    getPath () {
+        if (this.props.frames) {
+            return this.props.frames[this.state.frame];
+        }
+
+        return path[this.props.type];
+    }
+
+    render () {
+        return (
+            <svg
+                className={this.props.className}
+                dangerouslySetInnerHTML={{ __html: this.getPath() }}
+                style={this.props.style}
+                tabIndex={this.props.tabIndex}
+                viewBox={this.props.viewBox}
+            />
+        );
+    }
+}
+
+Svg.propTypes = propTypes;
+Svg.defaultProps = defaultProps;
+
+export default Svg;

@@ -1,0 +1,21 @@
+import * as adminAPI from '../clients/adminAPI';
+
+import { userFreemium } from 'constants/user';
+
+export const updateLocale = (localeData) => {
+    return adminAPI.updateLocale(
+        `accountId=${localeData.accountId}&preferredLocale=${localeData.locale}`
+    ).then((response) => response);
+};
+
+export const updateAccountStatus = () => {
+    return adminAPI.updateAccountStatus(
+        `accountStatus=${userFreemium.ACTIVE}`
+    ).then((response) => response);
+};
+
+export const updateViewPermission = (permissionId) => {
+    return adminAPI.updateViewPermission(
+        `permissionId=${permissionId}`
+    ).then((response) => response);
+};

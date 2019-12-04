@@ -1,0 +1,92 @@
+import { CSF_TOKEN } from 'constants';
+
+const INTERNAL_SERVER_ERROR = 500;
+const STATUS_TIMEOUT = 504;
+
+export const httpRequest = (options) => {
+    return new Promise((resolve, reject) => {
+        const contentType = options.contentType ? options.contentType : 'application/x-www-form-urlencoded';
+        const READY_STATE_DONE = 4;
+        const STATUS_OK = 200;
+        const async = options.async || true;
+        const responseType = options.responseType ? options.responseType.toLowerCase() : null;
+        const readyState = options.readyState || READY_STATE_DONE;
+        const status = options.status || STATUS_OK;
+        const request = new XMLHttpRequest();
+        const data = options.data || null;
+
+        request.open(options.method, encodeURI(options.url), async);
+
+        if (responseType === 'blob') {
+            request.responseType = 'blob';
+        }
+
+        if (localStorage) {
+            request.setRequestHeader(CSF_TOKEN, localStorage.getItem(CSF_TOKEN));
+        }
+        request.setRequestHeader('Content-Type', contentType);
+        request.onreadystatechange = () => {
+            if (request.readyState === readyState && request.status === status) {
+                switch (responseType) {
+                    case 'json': {
+                        if (request.responseText) {
+                            resolve(JSON.parse(request.responseText));
+                        } else {
+                            throw new Error('Can not parse JSON!');
+                        }
+                        break;
+                    }
+                    case 'string': {
+                        resolve(request.responseText);
+                        break;
+                    }
+                    case 'xml': {
+                        resolve(request.responseXML);
+                        break;
+                    }
+                    case 'blob': {
+                        resolve(request.response);
+                    }
+                    default: {
+                        resolve(request);
+                        break;
+                    }
+                }
+            }
+            if (request.status === INTERNAL_SERVER_ERROR) {
+                reject(new Error('Internal Server Error!'));
+            }
+            if (request.status === STATUS_TIMEOUT) {
+                reject(new Error('Gateway Timeout Error!'));
+            }
+        };
+        request.onerror = () => {
+            reject(new Error('Http Request Error!'));
+        };
+        request.send(data);
+    });
+};
+
+export const checkURLValiditySync = (url) => {
+    const READY_STATE_DONE = 4;
+    const STATUS_OK = 200;
+    const request = new XMLHttpRequest();
+    let status = false;
+
+    request.open('POST', '/backOffice/checkURLValidity', false);
+    request.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    request.onreadystatechange = () => {
+        if (request.readyState === READY_STATE_DONE && request.status === STATUS_OK) {
+            if (request.responseText === 'true') {
+                status = true;
+            }
+        }
+    };
+
+    request.send(`url=${url}`);
+
+    return status;
+};
+
+export const objectToRequestParam = (data) =>
+    Object.keys(data).reduce((keyValueString, key) => keyValueString.concat(`${key}=${data[key]}&`), '');
